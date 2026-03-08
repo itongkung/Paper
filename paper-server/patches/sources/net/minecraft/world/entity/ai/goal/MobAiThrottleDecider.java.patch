@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,275 @@
+@@ -1,0 +_,288 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import com.mojang.logging.LogUtils;
@@ -32,7 +32,8 @@
 +        true,
 +        ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN,
 +        false,
-+        0
++        0,
++        false
 +    );
 +    private static final MobSettings SKELETON_DEFAULT_SETTINGS = new MobSettings(
 +        true,
@@ -41,7 +42,8 @@
 +        false,
 +        0,
 +        true,
-+        SKELETON_TARGET_CHECK_INTERVAL
++        SKELETON_TARGET_CHECK_INTERVAL,
++        false
 +    );
 +    private static final MobSettings CREEPER_DEFAULT_SETTINGS = new MobSettings(
 +        true,
@@ -50,9 +52,10 @@
 +        false,
 +        0,
 +        false,
-+        0
++        0,
++        false
 +    );
-+    private static final MobSettings DISABLED_SETTINGS = new MobSettings(false, false, VANILLA_SELECTOR_INTERVAL, false, 0, false, 0);
++    private static final MobSettings DISABLED_SETTINGS = new MobSettings(false, false, VANILLA_SELECTOR_INTERVAL, false, 0, false, 0, false);
 +    private static volatile ConfigState cachedConfig = ConfigState.defaults();
 +    private static volatile long configLastModified = Long.MIN_VALUE;
 +    private static volatile long nextReloadCheckTick = Long.MIN_VALUE;
@@ -90,6 +93,12 @@
 +    public static boolean shouldThrottleFarMobAi(final Mob mob) {
 +        ConfigState state = configFor(mob);
 +        return shouldThrottleFarMobAi(mob, state, settingsFor(mob, state));
++    }
++
++    public static boolean shouldSkipCollisionPush(final Mob mob) {
++        ConfigState state = configFor(mob);
++        MobSettings settings = settingsFor(mob, state);
++        return settings.disableCollisionPushWhenThrottled() && shouldThrottleFarMobAi(mob, state, settings);
 +    }
 +
 +    private static boolean shouldThrottleFarMobAi(final Mob mob, final ConfigState state, final MobSettings settings) {
@@ -189,6 +198,7 @@
 +        defaults.options().header("""
 +            iTong custom mob AI throttle settings
 +            Note: set global.near-player-radius to 0.0 if you want throttling even when players are close.
++            Note: set collision-push.disable-when-throttled to true to remove mob push cost in dense swarms.
 +            """);
 +        defaults.set("global.enabled", true);
 +        defaults.set("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS);
@@ -211,6 +221,7 @@
 +        config.set(path + ".zombie-path-recalculation.extra-cooldown", settings.zombiePathRecalculationExtraCooldown());
 +        config.set(path + ".skeleton-target-check.enabled", settings.skeletonTargetCheckEnabled());
 +        config.set(path + ".skeleton-target-check.interval", settings.skeletonTargetCheckInterval());
++        config.set(path + ".collision-push.disable-when-throttled", settings.disableCollisionPushWhenThrottled());
 +    }
 +
 +    private static MobSettings readMobSettings(final YamlConfiguration config, final String path, final MobSettings defaults) {
@@ -221,7 +232,8 @@
 +            config.getBoolean(path + ".zombie-path-recalculation.enabled", defaults.zombiePathRecalculationEnabled()),
 +            config.getInt(path + ".zombie-path-recalculation.extra-cooldown", defaults.zombiePathRecalculationExtraCooldown()),
 +            config.getBoolean(path + ".skeleton-target-check.enabled", defaults.skeletonTargetCheckEnabled()),
-+            config.getInt(path + ".skeleton-target-check.interval", defaults.skeletonTargetCheckInterval())
++            config.getInt(path + ".skeleton-target-check.interval", defaults.skeletonTargetCheckInterval()),
++            config.getBoolean(path + ".collision-push.disable-when-throttled", defaults.disableCollisionPushWhenThrottled())
 +        );
 +    }
 +
@@ -232,7 +244,8 @@
 +        boolean zombiePathRecalculationEnabled,
 +        int zombiePathRecalculationExtraCooldown,
 +        boolean skeletonTargetCheckEnabled,
-+        int skeletonTargetCheckInterval
++        int skeletonTargetCheckInterval,
++        boolean disableCollisionPushWhenThrottled
 +    ) {
 +    }
 +
