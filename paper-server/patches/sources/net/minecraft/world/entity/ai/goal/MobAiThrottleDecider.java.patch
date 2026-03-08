@@ -1,6 +1,6 @@
-﻿--- /dev/null
+--- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,501 @@
+@@ -1,0 +_,507 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import com.mojang.logging.LogUtils;
@@ -143,6 +143,7 @@
 +        }
 +        MobGroup mobGroup = mobGroup(mob);
 +        if (mobGroup != MobGroup.OTHER) {
++            // ส่ง snapshot ไปให้ worker คำนวณความหนาแน่นนอกเธรดหลัก
 +            ASYNC_SWARM_TRACKER.submitSample(mob, mobGroup);
 +        }
 +        if (state.nearPlayerRadius() > 0.0 && mob.level().hasNearbyAlivePlayer(mob.getX(), mob.getY(), mob.getZ(), state.nearPlayerRadius())) {
@@ -253,9 +254,9 @@
 +    private static YamlConfiguration createDefaultConfig() {
 +        YamlConfiguration defaults = new YamlConfiguration();
 +        defaults.options().header("""
-+            à¸•à¸±à¹‰à¸‡à¸„à¹ˆà¸² iTong à¸ªà¸³à¸«à¸£à¸±à¸šà¸¥à¸”à¸ à¸²à¸£à¸° AI à¸‚à¸­à¸‡à¸¡à¸­à¸™
-+            à¸–à¹‰à¸²à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¹ƒà¸«à¹‰à¹€à¸£à¸´à¹ˆà¸¡à¸¥à¸”à¸ à¸²à¸£à¸°à¹à¸¡à¹‰à¸œà¸¹à¹‰à¹€à¸¥à¹ˆà¸™à¸­à¸¢à¸¹à¹ˆà¹ƒà¸à¸¥à¹‰ à¹ƒà¸«à¹‰à¸•à¸±à¹‰à¸‡ global.near-player-radius à¹€à¸›à¹‡à¸™ 0.0
-+            à¸–à¹‰à¸²à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸¥à¸”à¸ à¸²à¸£à¸°à¸ˆà¸²à¸à¸à¸²à¸£à¸”à¸±à¸™à¸à¸±à¸™à¹ƒà¸™à¸à¸¹à¸‡à¹à¸™à¹ˆà¸™ à¹ƒà¸«à¹‰à¸•à¸±à¹‰à¸‡ collision-push.disable-when-throttled à¹€à¸›à¹‡à¸™ true
++            ตั้งค่า iTong สำหรับลดภาระ AI ของมอน
++            ถ้าต้องการให้เริ่มลดภาระแม้ผู้เล่นอยู่ใกล้ ให้ตั้ง global.near-player-radius เป็น 0.0
++            ถ้าต้องการลดภาระจากการดันกันในฝูงแน่น ให้ตั้ง collision-push.disable-when-throttled เป็น true
 +            """);
 +        defaults.set("global.enabled", true);
 +        defaults.set("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS);
@@ -388,6 +389,7 @@
 +            if (previousTick != null && previousTick.intValue() == currentTick) {
 +                return;
 +            }
++            // เก็บเฉพาะตำแหน่งย่อส่วนเป็น cell เพื่อลดต้นทุนการคำนวณ
 +            this.pending.offer(new MobSample(entityKey, worldId, group.ordinal(), toCell(mob.getX()), toCell(mob.getZ()), System.nanoTime()));
 +        }
 +
@@ -398,6 +400,7 @@
 +            int cellRadius = Math.max(0, (int)Math.ceil(radius / CELL_SIZE));
 +            int count = 0;
 +            int groupId = group.ordinal();
++            // อ่านจาก cache ที่ worker อัปเดตไว้แทนการค้นเอนติตี้รอบตัวทุกครั้ง
 +            for (int dx = -cellRadius; dx <= cellRadius; ++dx) {
 +                for (int dz = -cellRadius; dz <= cellRadius; ++dz) {
 +                    long key = composeCellKey(worldId, groupId, centerCellX + dx, centerCellZ + dz);
@@ -416,6 +419,7 @@
 +            for (;;) {
 +                boolean didWork = false;
 +                MobSample sample;
++                // worker รวมข้อมูลตำแหน่งเข้าตารางความหนาแน่นนอกเธรดหลัก
 +                while ((sample = this.pending.poll()) != null) {
 +                    didWork = true;
 +                    TrackedMob current = tracked.get(sample.entityKey());
@@ -439,6 +443,7 @@
 +                if (now - lastCleanup >= CLEANUP_INTERVAL_NANOS) {
 +                    didWork = true;
 +                    Iterator<Map.Entry<Long, TrackedMob>> iterator = tracked.entrySet().iterator();
++                    // ลบข้อมูลเก่าที่ไม่อัปเดตแล้ว ป้องกัน map โตไม่หยุด
 +                    while (iterator.hasNext()) {
 +                        Map.Entry<Long, TrackedMob> entry = iterator.next();
 +                        TrackedMob trackedMob = entry.getValue();
@@ -502,3 +507,4 @@
 +        }
 +    }
 +}
++
