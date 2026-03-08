@@ -673,10 +673,10 @@ index 768adc0205a2ec5221045c9c2ca0fdeec9f734b6..e82bb8f2d2b0e771dc371fd7e709116e
      public void tick() {
          if (this.getItem().isEmpty()) {
 diff --git a/net/minecraft/world/entity/npc/villager/Villager.java b/net/minecraft/world/entity/npc/villager/Villager.java
-index 10a66bb3c093a1d31f3c985b418acb9232cc882c..89844d7e804cc8a2110b694e448bc5993991bea7 100644
+index 1250090f26815f018b96b4f724eec145dc68cf5e..529a9d57dc54e3dbf33031d471cea12bc2bbb803 100644
 --- a/net/minecraft/world/entity/npc/villager/Villager.java
 +++ b/net/minecraft/world/entity/npc/villager/Villager.java
-@@ -269,11 +269,35 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
+@@ -270,11 +270,35 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
          return this.assignProfessionWhenSpawned;
      }
  
@@ -708,12 +708,12 @@ index 10a66bb3c093a1d31f3c985b418acb9232cc882c..89844d7e804cc8a2110b694e448bc599
 +        // Paper end - EAR 2
          ProfilerFiller profilerFiller = Profiler.get();
          profilerFiller.push("villagerBrain");
--        this.getBrain().tick(level, this);
-+        if (!inactive) this.getBrain().tick(level, this); // Paper - EAR 2
+-        if (!MobAiThrottleDecider.shouldSkipVillagerBrainTick(this)) this.getBrain().tick(level, this);
++        if (!inactive && !MobAiThrottleDecider.shouldSkipVillagerBrainTick(this)) this.getBrain().tick(level, this); // Paper - EAR 2
          profilerFiller.pop();
          if (this.assignProfessionWhenSpawned) {
              this.assignProfessionWhenSpawned = false;
-@@ -297,7 +321,7 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
+@@ -298,7 +322,7 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
              this.lastTradedPlayer = null;
          }
  
@@ -722,7 +722,7 @@ index 10a66bb3c093a1d31f3c985b418acb9232cc882c..89844d7e804cc8a2110b694e448bc599
              Raid raidAt = level.getRaidAt(this.blockPosition());
              if (raidAt != null && raidAt.isActive() && !raidAt.isOver()) {
                  level.broadcastEntityEvent(this, EntityEvent.VILLAGER_SWEAT);
-@@ -308,6 +332,7 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
+@@ -309,6 +333,7 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
              this.stopTrading();
          }
  

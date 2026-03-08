@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,288 @@
+@@ -1,0 +_,331 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import com.mojang.logging.LogUtils;
@@ -10,6 +10,7 @@
 +import net.minecraft.world.entity.monster.Creeper;
 +import net.minecraft.world.entity.monster.skeleton.AbstractSkeleton;
 +import net.minecraft.world.entity.monster.zombie.Zombie;
++import net.minecraft.world.entity.npc.villager.Villager;
 +import org.bukkit.configuration.file.YamlConfiguration;
 +import org.slf4j.Logger;
 +
@@ -33,6 +34,8 @@
 +        ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN,
 +        false,
 +        0,
++        false,
++        0,
 +        false
 +    );
 +    private static final MobSettings SKELETON_DEFAULT_SETTINGS = new MobSettings(
@@ -43,6 +46,8 @@
 +        0,
 +        true,
 +        SKELETON_TARGET_CHECK_INTERVAL,
++        false,
++        0,
 +        false
 +    );
 +    private static final MobSettings CREEPER_DEFAULT_SETTINGS = new MobSettings(
@@ -53,9 +58,23 @@
 +        0,
 +        false,
 +        0,
++        false,
++        0,
 +        false
 +    );
-+    private static final MobSettings DISABLED_SETTINGS = new MobSettings(false, false, VANILLA_SELECTOR_INTERVAL, false, 0, false, 0, false);
++    private static final MobSettings VILLAGER_DEFAULT_SETTINGS = new MobSettings(
++        true,
++        true,
++        12,
++        false,
++        0,
++        false,
++        0,
++        true,
++        20,
++        true
++    );
++    private static final MobSettings DISABLED_SETTINGS = new MobSettings(false, false, VANILLA_SELECTOR_INTERVAL, false, 0, false, 0, false, 0, false);
 +    private static volatile ConfigState cachedConfig = ConfigState.defaults();
 +    private static volatile long configLastModified = Long.MIN_VALUE;
 +    private static volatile long nextReloadCheckTick = Long.MIN_VALUE;
@@ -99,6 +118,17 @@
 +        ConfigState state = configFor(mob);
 +        MobSettings settings = settingsFor(mob, state);
 +        return settings.disableCollisionPushWhenThrottled() && shouldThrottleFarMobAi(mob, state, settings);
++    }
++
++    public static boolean shouldSkipVillagerBrainTick(final Villager villager) {
++        ConfigState state = configFor(villager);
++        MobSettings settings = settingsFor(villager, state);
++        if (!settings.villagerBrainThrottleEnabled() || !shouldThrottleFarMobAi(villager, state, settings)) {
++            return false;
++        }
++        int interval = Math.max(2, settings.villagerBrainTickRate());
++        long tick = villager.level().getGameTime() + villager.getId();
++        return tick % interval != 0;
 +    }
 +
 +    private static boolean shouldThrottleFarMobAi(final Mob mob, final ConfigState state, final MobSettings settings) {
@@ -149,6 +179,9 @@
 +    }
 +
 +    private static MobSettings settingsFor(final Mob mob, final ConfigState state) {
++        if (mob instanceof Villager) {
++            return state.villager();
++        }
 +        if (mob instanceof Zombie) {
 +            return state.zombie();
 +        }
@@ -196,9 +229,9 @@
 +    private static YamlConfiguration createDefaultConfig() {
 +        YamlConfiguration defaults = new YamlConfiguration();
 +        defaults.options().header("""
-+            iTong custom mob AI throttle settings
-+            Note: set global.near-player-radius to 0.0 if you want throttling even when players are close.
-+            Note: set collision-push.disable-when-throttled to true to remove mob push cost in dense swarms.
++            ตั้งค่า iTong สำหรับลดภาระ AI ของมอน
++            ถ้าต้องการให้เริ่มลดภาระแม้ผู้เล่นอยู่ใกล้ ให้ตั้ง global.near-player-radius เป็น 0.0
++            ถ้าต้องการลดภาระจากการดันกันในฝูงแน่น ให้ตั้ง collision-push.disable-when-throttled เป็น true
 +            """);
 +        defaults.set("global.enabled", true);
 +        defaults.set("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS);
@@ -210,6 +243,7 @@
 +        writeMobDefaults(defaults, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS);
 +        writeMobDefaults(defaults, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS);
 +        writeMobDefaults(defaults, "mobs.creeper", CREEPER_DEFAULT_SETTINGS);
++        writeMobDefaults(defaults, "mobs.villager", VILLAGER_DEFAULT_SETTINGS);
 +        return defaults;
 +    }
 +
@@ -221,6 +255,8 @@
 +        config.set(path + ".zombie-path-recalculation.extra-cooldown", settings.zombiePathRecalculationExtraCooldown());
 +        config.set(path + ".skeleton-target-check.enabled", settings.skeletonTargetCheckEnabled());
 +        config.set(path + ".skeleton-target-check.interval", settings.skeletonTargetCheckInterval());
++        config.set(path + ".villager-brain.enabled", settings.villagerBrainThrottleEnabled());
++        config.set(path + ".villager-brain.tick-rate", settings.villagerBrainTickRate());
 +        config.set(path + ".collision-push.disable-when-throttled", settings.disableCollisionPushWhenThrottled());
 +    }
 +
@@ -233,6 +269,8 @@
 +            config.getInt(path + ".zombie-path-recalculation.extra-cooldown", defaults.zombiePathRecalculationExtraCooldown()),
 +            config.getBoolean(path + ".skeleton-target-check.enabled", defaults.skeletonTargetCheckEnabled()),
 +            config.getInt(path + ".skeleton-target-check.interval", defaults.skeletonTargetCheckInterval()),
++            config.getBoolean(path + ".villager-brain.enabled", defaults.villagerBrainThrottleEnabled()),
++            config.getInt(path + ".villager-brain.tick-rate", defaults.villagerBrainTickRate()),
 +            config.getBoolean(path + ".collision-push.disable-when-throttled", defaults.disableCollisionPushWhenThrottled())
 +        );
 +    }
@@ -245,6 +283,8 @@
 +        int zombiePathRecalculationExtraCooldown,
 +        boolean skeletonTargetCheckEnabled,
 +        int skeletonTargetCheckInterval,
++        boolean villagerBrainThrottleEnabled,
++        int villagerBrainTickRate,
 +        boolean disableCollisionPushWhenThrottled
 +    ) {
 +    }
@@ -258,7 +298,8 @@
 +        int swarmSizeThreshold,
 +        MobSettings zombie,
 +        MobSettings skeleton,
-+        MobSettings creeper
++        MobSettings creeper,
++        MobSettings villager
 +    ) {
 +        static ConfigState defaults() {
 +            return new ConfigState(
@@ -270,7 +311,8 @@
 +                SWARM_SIZE_THRESHOLD,
 +                ZOMBIE_DEFAULT_SETTINGS,
 +                SKELETON_DEFAULT_SETTINGS,
-+                CREEPER_DEFAULT_SETTINGS
++                CREEPER_DEFAULT_SETTINGS,
++                VILLAGER_DEFAULT_SETTINGS
 +            );
 +        }
 +
@@ -284,7 +326,8 @@
 +                Math.max(0, config.getInt("global.swarm-size-threshold", SWARM_SIZE_THRESHOLD)),
 +                readMobSettings(config, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS),
 +                readMobSettings(config, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS),
-+                readMobSettings(config, "mobs.creeper", CREEPER_DEFAULT_SETTINGS)
++                readMobSettings(config, "mobs.creeper", CREEPER_DEFAULT_SETTINGS),
++                readMobSettings(config, "mobs.villager", VILLAGER_DEFAULT_SETTINGS)
 +            );
 +        }
 +    }
