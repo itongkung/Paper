@@ -1,101 +1,278 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,98 @@
+@@ -1,0 +_,275 @@
 +package net.minecraft.world.entity.ai.goal;
 +
++import com.mojang.logging.LogUtils;
++import java.io.File;
++import java.io.IOException;
 +import net.minecraft.world.entity.Mob;
 +import net.minecraft.world.entity.monster.Creeper;
 +import net.minecraft.world.entity.monster.skeleton.AbstractSkeleton;
 +import net.minecraft.world.entity.monster.zombie.Zombie;
++import org.bukkit.configuration.file.YamlConfiguration;
++import org.slf4j.Logger;
 +
 +public final class MobAiThrottleDecider {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private static final File ITONG_CONFIG_FILE = new File("config", "itong.yml");
 +    private static final int VANILLA_SELECTOR_INTERVAL = 2;
 +    private static final int THROTTLED_SELECTOR_INTERVAL = 4;
 +    private static final int ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN = 6;
 +    private static final int SKELETON_TARGET_CHECK_INTERVAL = 20;
-+    private static final String FAR_MOB_AI_THROTTLE_ENABLED_KEY = "far_mob_ai_throttle_enabled";
-+    private static final String FAR_MOB_AI_THROTTLE_TICK_RATE_KEY = "far_mob_ai_throttle_tick_rate";
-+    private static final String ZOMBIE_PATH_RECALCULATION_ENABLED_KEY = "zombie_path_recalculation_enabled";
-+    private static final String ZOMBIE_PATH_RECALCULATION_COOLDOWN_KEY = "zombie_path_recalculation_extra_cooldown";
-+    private static final String SKELETON_TARGET_CHECK_ENABLED_KEY = "skeleton_target_check_enabled";
-+    private static final String SKELETON_TARGET_CHECK_INTERVAL_KEY = "skeleton_target_check_interval";
 +    private static final double NEAR_PLAYER_RADIUS = 24.0;
 +    private static final double FAR_PLAYER_RADIUS = 48.0;
 +    private static final double SWARM_RADIUS = 12.0;
 +    private static final int SWARM_SIZE_THRESHOLD = 5;
++    private static final int RELOAD_CHECK_INTERVAL_TICKS = 200;
++    private static final MobSettings ZOMBIE_DEFAULT_SETTINGS = new MobSettings(
++        true,
++        true,
++        THROTTLED_SELECTOR_INTERVAL,
++        true,
++        ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN,
++        false,
++        0
++    );
++    private static final MobSettings SKELETON_DEFAULT_SETTINGS = new MobSettings(
++        true,
++        true,
++        THROTTLED_SELECTOR_INTERVAL,
++        false,
++        0,
++        true,
++        SKELETON_TARGET_CHECK_INTERVAL
++    );
++    private static final MobSettings CREEPER_DEFAULT_SETTINGS = new MobSettings(
++        true,
++        true,
++        THROTTLED_SELECTOR_INTERVAL,
++        false,
++        0,
++        false,
++        0
++    );
++    private static final MobSettings DISABLED_SETTINGS = new MobSettings(false, false, VANILLA_SELECTOR_INTERVAL, false, 0, false, 0);
++    private static volatile ConfigState cachedConfig = ConfigState.defaults();
++    private static volatile long configLastModified = Long.MIN_VALUE;
++    private static volatile long nextReloadCheckTick = Long.MIN_VALUE;
 +
 +    private MobAiThrottleDecider() {
 +    }
 +
 +    public static int goalSelectorInterval(final Mob mob) {
-+        if (!shouldThrottleFarMobAi(mob)) {
++        ConfigState state = configFor(mob);
++        MobSettings settings = settingsFor(mob, state);
++        if (!settings.farMobAiThrottleEnabled() || !shouldThrottleFarMobAi(mob, state, settings)) {
 +            return VANILLA_SELECTOR_INTERVAL;
 +        }
-+        if (!isFeatureEnabled(mob, FAR_MOB_AI_THROTTLE_ENABLED_KEY, true)) {
-+            return VANILLA_SELECTOR_INTERVAL;
-+        }
-+        int configuredInterval = getFeatureValue(mob, FAR_MOB_AI_THROTTLE_TICK_RATE_KEY, THROTTLED_SELECTOR_INTERVAL);
-+        return configuredInterval > VANILLA_SELECTOR_INTERVAL ? configuredInterval : VANILLA_SELECTOR_INTERVAL;
++        return Math.max(VANILLA_SELECTOR_INTERVAL, settings.farMobAiThrottleTickRate());
 +    }
 +
 +    public static int zombiePathRecalculationExtraCooldown(final Mob mob) {
-+        if (!shouldThrottleZombiePathRecalculation(mob)) {
++        ConfigState state = configFor(mob);
++        MobSettings settings = settingsFor(mob, state);
++        if (!settings.zombiePathRecalculationEnabled() || !shouldThrottleZombiePathRecalculation(mob, state, settings)) {
 +            return 0;
 +        }
-+        if (!isFeatureEnabled(mob, ZOMBIE_PATH_RECALCULATION_ENABLED_KEY, true)) {
-+            return 0;
-+        }
-+        return Math.max(0, getFeatureValue(mob, ZOMBIE_PATH_RECALCULATION_COOLDOWN_KEY, ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN));
++        return Math.max(0, settings.zombiePathRecalculationExtraCooldown());
 +    }
 +
 +    public static int skeletonTargetCheckInterval(final Mob mob) {
-+        if (!shouldThrottleSkeletonTargetChecks(mob)) {
++        ConfigState state = configFor(mob);
++        MobSettings settings = settingsFor(mob, state);
++        if (!settings.skeletonTargetCheckEnabled() || !shouldThrottleSkeletonTargetChecks(mob, state, settings)) {
 +            return 0;
 +        }
-+        if (!isFeatureEnabled(mob, SKELETON_TARGET_CHECK_ENABLED_KEY, true)) {
-+            return 0;
-+        }
-+        return Math.max(0, getFeatureValue(mob, SKELETON_TARGET_CHECK_INTERVAL_KEY, SKELETON_TARGET_CHECK_INTERVAL));
++        return Math.max(0, settings.skeletonTargetCheckInterval());
 +    }
 +
 +    public static boolean shouldThrottleFarMobAi(final Mob mob) {
-+        if (!supportsFarMobAiThrottle(mob)) {
++        ConfigState state = configFor(mob);
++        return shouldThrottleFarMobAi(mob, state, settingsFor(mob, state));
++    }
++
++    private static boolean shouldThrottleFarMobAi(final Mob mob, final ConfigState state, final MobSettings settings) {
++        if (!state.enabled() || !settings.enabled()) {
 +            return false;
 +        }
-+        if (mob.level().hasNearbyAlivePlayer(mob.getX(), mob.getY(), mob.getZ(), NEAR_PLAYER_RADIUS)) {
++        if (state.nearPlayerRadius() > 0.0 && mob.level().hasNearbyAlivePlayer(mob.getX(), mob.getY(), mob.getZ(), state.nearPlayerRadius())) {
 +            return false;
 +        }
-+        if (!mob.level().hasNearbyAlivePlayer(mob.getX(), mob.getY(), mob.getZ(), FAR_PLAYER_RADIUS)) {
++        if (state.farPlayerRadius() <= 0.0 || !mob.level().hasNearbyAlivePlayer(mob.getX(), mob.getY(), mob.getZ(), state.farPlayerRadius())) {
 +            return true;
 +        }
-+        return isInSwarm(mob);
++        return isInSwarm(mob, state.swarmRadius(), state.swarmSizeThreshold());
 +    }
 +
-+    private static boolean supportsFarMobAiThrottle(final Mob mob) {
-+        return mob instanceof Zombie || mob instanceof AbstractSkeleton || mob instanceof Creeper;
++    private static boolean shouldThrottleZombiePathRecalculation(final Mob mob, final ConfigState state, final MobSettings settings) {
++        return mob instanceof Zombie && shouldThrottleFarMobAi(mob, state, settings);
 +    }
 +
-+    private static boolean shouldThrottleZombiePathRecalculation(final Mob mob) {
-+        return mob instanceof Zombie && shouldThrottleFarMobAi(mob);
++    private static boolean shouldThrottleSkeletonTargetChecks(final Mob mob, final ConfigState state, final MobSettings settings) {
++        return mob instanceof AbstractSkeleton && shouldThrottleFarMobAi(mob, state, settings);
 +    }
 +
-+    private static boolean shouldThrottleSkeletonTargetChecks(final Mob mob) {
-+        return mob instanceof AbstractSkeleton && shouldThrottleFarMobAi(mob);
-+    }
-+
-+    private static boolean isInSwarm(final Mob mob) {
++    private static boolean isInSwarm(final Mob mob, final double swarmRadius, final int swarmSizeThreshold) {
++        if (swarmRadius <= 0.0 || swarmSizeThreshold <= 0) {
++            return false;
++        }
 +        return mob.level()
-+                .getEntitiesOfClass(Mob.class, mob.getBoundingBox().inflate(SWARM_RADIUS), nearby -> nearby != mob && nearby.getType() == mob.getType())
-+                .size() >= SWARM_SIZE_THRESHOLD;
++            .getEntitiesOfClass(Mob.class, mob.getBoundingBox().inflate(swarmRadius), nearby -> nearby != mob && nearby.getType() == mob.getType())
++            .size() >= swarmSizeThreshold;
 +    }
 +
-+    private static boolean isFeatureEnabled(final Mob mob, final String configKey, final boolean defaultValue) {
-+        Integer configured = mob.level().paperConfig().tickRates.behavior.get(mob.getType(), configKey);
-+        return configured != null ? configured.intValue() > 0 : defaultValue;
++    private static ConfigState configFor(final Mob mob) {
++        long gameTime = mob.level().getGameTime();
++        ConfigState snapshot = cachedConfig;
++        if (gameTime < nextReloadCheckTick) {
++            return snapshot;
++        }
++        synchronized (MobAiThrottleDecider.class) {
++            if (gameTime < nextReloadCheckTick) {
++                return cachedConfig;
++            }
++            reloadConfigIfNeeded();
++            snapshot = cachedConfig;
++            nextReloadCheckTick = gameTime + Math.max(20L, snapshot.reloadCheckIntervalTicks());
++            return snapshot;
++        }
 +    }
 +
-+    private static int getFeatureValue(final Mob mob, final String configKey, final int defaultValue) {
-+        Integer configured = mob.level().paperConfig().tickRates.behavior.get(mob.getType(), configKey);
-+        return configured != null ? configured.intValue() : defaultValue;
++    private static MobSettings settingsFor(final Mob mob, final ConfigState state) {
++        if (mob instanceof Zombie) {
++            return state.zombie();
++        }
++        if (mob instanceof AbstractSkeleton) {
++            return state.skeleton();
++        }
++        if (mob instanceof Creeper) {
++            return state.creeper();
++        }
++        return DISABLED_SETTINGS;
++    }
++
++    private static void reloadConfigIfNeeded() {
++        try {
++            ensureConfigFile();
++            long lastModified = ITONG_CONFIG_FILE.lastModified();
++            if (configLastModified == lastModified && configLastModified != Long.MIN_VALUE) {
++                return;
++            }
++
++            YamlConfiguration config = YamlConfiguration.loadConfiguration(ITONG_CONFIG_FILE);
++            YamlConfiguration defaults = createDefaultConfig();
++            config.setDefaults(defaults);
++            config.options().copyDefaults(true);
++            config.save(ITONG_CONFIG_FILE);
++
++            cachedConfig = ConfigState.from(config);
++            configLastModified = ITONG_CONFIG_FILE.lastModified();
++        } catch (IOException ex) {
++            LOGGER.warn("Failed to load {}", ITONG_CONFIG_FILE.getPath(), ex);
++            cachedConfig = ConfigState.defaults();
++        }
++    }
++
++    private static void ensureConfigFile() throws IOException {
++        File parent = ITONG_CONFIG_FILE.getParentFile();
++        if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
++            throw new IOException("Failed to create directory: " + parent.getAbsolutePath());
++        }
++        if (!ITONG_CONFIG_FILE.exists()) {
++            createDefaultConfig().save(ITONG_CONFIG_FILE);
++        }
++    }
++
++    private static YamlConfiguration createDefaultConfig() {
++        YamlConfiguration defaults = new YamlConfiguration();
++        defaults.options().header("""
++            iTong custom mob AI throttle settings
++            Note: set global.near-player-radius to 0.0 if you want throttling even when players are close.
++            """);
++        defaults.set("global.enabled", true);
++        defaults.set("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS);
++        defaults.set("global.near-player-radius", NEAR_PLAYER_RADIUS);
++        defaults.set("global.far-player-radius", FAR_PLAYER_RADIUS);
++        defaults.set("global.swarm-radius", SWARM_RADIUS);
++        defaults.set("global.swarm-size-threshold", SWARM_SIZE_THRESHOLD);
++
++        writeMobDefaults(defaults, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS);
++        writeMobDefaults(defaults, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS);
++        writeMobDefaults(defaults, "mobs.creeper", CREEPER_DEFAULT_SETTINGS);
++        return defaults;
++    }
++
++    private static void writeMobDefaults(final YamlConfiguration config, final String path, final MobSettings settings) {
++        config.set(path + ".enabled", settings.enabled());
++        config.set(path + ".far-mob-ai-throttle.enabled", settings.farMobAiThrottleEnabled());
++        config.set(path + ".far-mob-ai-throttle.tick-rate", settings.farMobAiThrottleTickRate());
++        config.set(path + ".zombie-path-recalculation.enabled", settings.zombiePathRecalculationEnabled());
++        config.set(path + ".zombie-path-recalculation.extra-cooldown", settings.zombiePathRecalculationExtraCooldown());
++        config.set(path + ".skeleton-target-check.enabled", settings.skeletonTargetCheckEnabled());
++        config.set(path + ".skeleton-target-check.interval", settings.skeletonTargetCheckInterval());
++    }
++
++    private static MobSettings readMobSettings(final YamlConfiguration config, final String path, final MobSettings defaults) {
++        return new MobSettings(
++            config.getBoolean(path + ".enabled", defaults.enabled()),
++            config.getBoolean(path + ".far-mob-ai-throttle.enabled", defaults.farMobAiThrottleEnabled()),
++            config.getInt(path + ".far-mob-ai-throttle.tick-rate", defaults.farMobAiThrottleTickRate()),
++            config.getBoolean(path + ".zombie-path-recalculation.enabled", defaults.zombiePathRecalculationEnabled()),
++            config.getInt(path + ".zombie-path-recalculation.extra-cooldown", defaults.zombiePathRecalculationExtraCooldown()),
++            config.getBoolean(path + ".skeleton-target-check.enabled", defaults.skeletonTargetCheckEnabled()),
++            config.getInt(path + ".skeleton-target-check.interval", defaults.skeletonTargetCheckInterval())
++        );
++    }
++
++    private record MobSettings(
++        boolean enabled,
++        boolean farMobAiThrottleEnabled,
++        int farMobAiThrottleTickRate,
++        boolean zombiePathRecalculationEnabled,
++        int zombiePathRecalculationExtraCooldown,
++        boolean skeletonTargetCheckEnabled,
++        int skeletonTargetCheckInterval
++    ) {
++    }
++
++    private record ConfigState(
++        boolean enabled,
++        int reloadCheckIntervalTicks,
++        double nearPlayerRadius,
++        double farPlayerRadius,
++        double swarmRadius,
++        int swarmSizeThreshold,
++        MobSettings zombie,
++        MobSettings skeleton,
++        MobSettings creeper
++    ) {
++        static ConfigState defaults() {
++            return new ConfigState(
++                true,
++                RELOAD_CHECK_INTERVAL_TICKS,
++                NEAR_PLAYER_RADIUS,
++                FAR_PLAYER_RADIUS,
++                SWARM_RADIUS,
++                SWARM_SIZE_THRESHOLD,
++                ZOMBIE_DEFAULT_SETTINGS,
++                SKELETON_DEFAULT_SETTINGS,
++                CREEPER_DEFAULT_SETTINGS
++            );
++        }
++
++        static ConfigState from(final YamlConfiguration config) {
++            return new ConfigState(
++                config.getBoolean("global.enabled", true),
++                Math.max(20, config.getInt("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS)),
++                Math.max(0.0, config.getDouble("global.near-player-radius", NEAR_PLAYER_RADIUS)),
++                Math.max(0.0, config.getDouble("global.far-player-radius", FAR_PLAYER_RADIUS)),
++                Math.max(0.0, config.getDouble("global.swarm-radius", SWARM_RADIUS)),
++                Math.max(0, config.getInt("global.swarm-size-threshold", SWARM_SIZE_THRESHOLD)),
++                readMobSettings(config, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS),
++                readMobSettings(config, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS),
++                readMobSettings(config, "mobs.creeper", CREEPER_DEFAULT_SETTINGS)
++            );
++        }
 +    }
 +}
