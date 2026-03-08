@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,569 @@
+@@ -1,0 +_,608 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import com.mojang.logging.LogUtils;
@@ -12,6 +12,7 @@
 +import java.util.concurrent.ConcurrentLinkedQueue;
 +import java.util.concurrent.locks.LockSupport;
 +import net.minecraft.world.entity.Mob;
++import net.minecraft.world.entity.animal.Animal;
 +import net.minecraft.world.entity.monster.Creeper;
 +import net.minecraft.world.entity.monster.skeleton.AbstractSkeleton;
 +import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -67,6 +68,18 @@
 +        false,
 +        0,
 +        false
++    );
++    private static final MobSettings ANIMAL_DEFAULT_SETTINGS = new MobSettings(
++        true,
++        true,
++        16,
++        false,
++        0,
++        false,
++        0,
++        false,
++        0,
++        true
 +    );
 +    private static final MobSettings VILLAGER_DEFAULT_SETTINGS = new MobSettings(
 +        true,
@@ -183,6 +196,9 @@
 +        if (mob instanceof Creeper) {
 +            return MobGroup.CREEPER;
 +        }
++        if (mob instanceof Animal) {
++            return MobGroup.ANIMAL;
++        }
 +        return MobGroup.OTHER;
 +    }
 +
@@ -206,6 +222,9 @@
 +    private static MobSettings settingsFor(final Mob mob, final ConfigState state) {
 +        if (mob instanceof Villager) {
 +            return state.villager();
++        }
++        if (mob instanceof Animal) {
++            return state.animal();
 +        }
 +        if (mob instanceof Zombie) {
 +            return state.zombie();
@@ -268,6 +287,7 @@
 +        writeMobDefaults(defaults, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS);
 +        writeMobDefaults(defaults, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS);
 +        writeMobDefaults(defaults, "mobs.creeper", CREEPER_DEFAULT_SETTINGS);
++        writeMobDefaults(defaults, "mobs.animal", ANIMAL_DEFAULT_SETTINGS);
 +        writeMobDefaults(defaults, "mobs.villager", VILLAGER_DEFAULT_SETTINGS);
 +        return defaults;
 +    }
@@ -362,6 +382,21 @@
 +        return defaultValue;
 +    }
 +
++    private static MobSettings readMobSettingsWithFallback(
++        final YamlConfiguration config,
++        final MobSettings defaults,
++        final String primaryPath,
++        final String fallbackPath
++    ) {
++        if (config.contains(primaryPath)) {
++            return readMobSettings(config, primaryPath, defaults);
++        }
++        if (config.contains(fallbackPath)) {
++            return readMobSettings(config, fallbackPath, defaults);
++        }
++        return readMobSettings(config, primaryPath, defaults);
++    }
++
 +    private record MobSettings(
 +        boolean enabled,
 +        boolean farMobAiThrottleEnabled,
@@ -386,6 +421,7 @@
 +        MobSettings zombie,
 +        MobSettings skeleton,
 +        MobSettings creeper,
++        MobSettings animal,
 +        MobSettings villager
 +    ) {
 +        static ConfigState defaults() {
@@ -399,6 +435,7 @@
 +                ZOMBIE_DEFAULT_SETTINGS,
 +                SKELETON_DEFAULT_SETTINGS,
 +                CREEPER_DEFAULT_SETTINGS,
++                ANIMAL_DEFAULT_SETTINGS,
 +                VILLAGER_DEFAULT_SETTINGS
 +            );
 +        }
@@ -414,6 +451,7 @@
 +                readMobSettings(config, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS),
 +                readMobSettings(config, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS),
 +                readMobSettings(config, "mobs.creeper", CREEPER_DEFAULT_SETTINGS),
++                readMobSettingsWithFallback(config, ANIMAL_DEFAULT_SETTINGS, "mobs.animal", "mobs.animals"),
 +                readMobSettings(config, "mobs.villager", VILLAGER_DEFAULT_SETTINGS)
 +            );
 +        }
@@ -424,6 +462,7 @@
 +        ZOMBIE,
 +        SKELETON,
 +        CREEPER,
++        ANIMAL,
 +        VILLAGER
 +    }
 +
