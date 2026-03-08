@@ -1,0 +1,10 @@
+--- a/net/minecraft/world/entity/ai/goal/MeleeAttackGoal.java
++++ b/net/minecraft/world/entity/ai/goal/MeleeAttackGoal.java
+@@ -115,6 +_,7 @@
+                 }
+ 
+                 this.ticksUntilNextPathRecalculation = this.adjustedTickDelay(this.ticksUntilNextPathRecalculation);
++                this.ticksUntilNextPathRecalculation += MobAiThrottleDecider.zombiePathRecalculationExtraCooldown(this.mob);
+             }
+ 
+             this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
