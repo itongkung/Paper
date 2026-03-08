@@ -1,5 +1,13 @@
 --- a/net/minecraft/world/entity/Mob.java
 +++ b/net/minecraft/world/entity/Mob.java
+@@ -51,6 +_,7 @@
+ import net.minecraft.world.entity.ai.control.MoveControl;
+ import net.minecraft.world.entity.ai.goal.Goal;
+ import net.minecraft.world.entity.ai.goal.GoalSelector;
++import net.minecraft.world.entity.ai.goal.MobAiThrottleDecider;
+ import net.minecraft.world.entity.ai.goal.WrappedGoal;
+ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 @@ -92,6 +_,14 @@
  import net.minecraft.world.ticks.ContainerSingleItem;
  import org.jspecify.annotations.Nullable;
@@ -241,7 +249,7 @@
                      this.noActionTime = 0;
                  }
              }
-@@ -679,6 +_,15 @@
+@@ -679,12 +_,22 @@
      @Override
      protected final void serverAiStep() {
          this.noActionTime++;
@@ -257,6 +265,14 @@
          ProfilerFiller profilerFiller = Profiler.get();
          profilerFiller.push("sensing");
          this.sensing.tick();
+         profilerFiller.pop();
+         int i = this.tickCount + this.getId();
+-        if (i % 2 != 0 && this.tickCount > 1) {
++        int selectorInterval = MobAiThrottleDecider.goalSelectorInterval(this);
++        if (i % selectorInterval != 0 && this.tickCount > 1) {
+             profilerFiller.push("targetSelector");
+             this.targetSelector.tickRunningGoals(false);
+             profilerFiller.pop();
 @@ -853,14 +_,69 @@
              public boolean stillValid(Player player) {
                  return player.getVehicle() == Mob.this || player.isWithinEntityInteractionRange(Mob.this, 4.0);
