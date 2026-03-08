@@ -1,0 +1,74 @@
+# ==========================
+# iTong AI Throttle Config
+# ==========================
+# รูปแบบนี้เน้นให้อ่านง่าย:
+# - คีย์หลักต่อมอนคือ ai-tick-rate (รอบการคิด AI ตอนมอนไกล/อยู่ฝูงหนาแน่น)
+# - ยิ่งเลขมาก = เบา CPU มากขึ้น แต่การตอบสนองจะช้าลง
+
+global:
+  # เปิด/ปิดระบบ iTong ทั้งหมด
+  enabled: true
+
+  # ความถี่ในการ reload ไฟล์นี้ (หน่วย: tick)
+  reload-check-interval-ticks: 200
+
+  # ถ้ามอนอยู่ใกล้ผู้เล่นในระยะนี้ จะไม่ถูก throttle
+  # ตั้ง 0.0 เพื่อให้ throttle ได้ทุกระยะ
+  near-player-radius: 0.0
+
+  # ถ้ามอนไกลผู้เล่นเกินระยะนี้ จะ throttle ทันที
+  always-throttle-radius: 48.0
+
+  # ค่าที่ใช้ตัดสินว่าเป็นฝูงหนาแน่นหรือไม่
+  swarm-radius: 16.0
+  swarm-size-threshold: 12
+
+mobs:
+  zombie:
+    # เปิด/ปิดเฉพาะ mob type นี้
+    enabled: true
+
+    # เปิด/ปิดการ throttle AI หลัก
+    ai-throttle-enabled: true
+
+    # AI จะทำงานทุกกี่ tick
+    ai-tick-rate: 10
+
+    # หน่วงเพิ่มการคำนวณ path ใหม่ของซอมบี้ (0 = ปิด)
+    zombie-path-extra-cooldown: 24
+
+    # ลดภาระตอนมอนกองกันแน่น (ข้ามแรงดันชนกันเมื่อถูก throttle)
+    disable-collision-push-when-throttled: true
+
+  skeleton:
+    enabled: true
+    ai-throttle-enabled: true
+    ai-tick-rate: 10
+
+    # เช็กเป้าหมายทุกกี่ tick (0 = ปิด)
+    skeleton-target-check-interval: 60
+
+    disable-collision-push-when-throttled: true
+
+  creeper:
+    enabled: true
+    ai-throttle-enabled: true
+    ai-tick-rate: 8
+    disable-collision-push-when-throttled: true
+
+  animal:
+    # กลุ่มสัตว์ (วัว แกะ หมู ไก่ ม้า หมาป่า ฯลฯ)
+    enabled: true
+    ai-throttle-enabled: true
+    ai-tick-rate: 16
+    disable-collision-push-when-throttled: true
+
+  villager:
+    enabled: true
+    ai-throttle-enabled: true
+    ai-tick-rate: 14
+
+    # หน่วงรอบ Brain ของชาวบ้าน (0 = ปิด)
+    villager-brain-tick-rate: 30
+
+    disable-collision-push-when-throttled: true
