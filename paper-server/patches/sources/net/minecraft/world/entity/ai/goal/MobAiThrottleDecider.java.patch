@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,507 @@
+@@ -1,0 +_,569 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import com.mojang.logging.LogUtils;
@@ -254,14 +254,14 @@
 +    private static YamlConfiguration createDefaultConfig() {
 +        YamlConfiguration defaults = new YamlConfiguration();
 +        defaults.options().header("""
-+            ตั้งค่า iTong สำหรับลดภาระ AI ของมอน
-+            ถ้าต้องการให้เริ่มลดภาระแม้ผู้เล่นอยู่ใกล้ ให้ตั้ง global.near-player-radius เป็น 0.0
-+            ถ้าต้องการลดภาระจากการดันกันในฝูงแน่น ให้ตั้ง collision-push.disable-when-throttled เป็น true
++            iTong AI throttling config (simple mode)
++            Use mobs.<type>.ai-tick-rate for far/swarm throttling.
++            Legacy keys are still supported for backward compatibility.
 +            """);
 +        defaults.set("global.enabled", true);
 +        defaults.set("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS);
 +        defaults.set("global.near-player-radius", NEAR_PLAYER_RADIUS);
-+        defaults.set("global.far-player-radius", FAR_PLAYER_RADIUS);
++        defaults.set("global.always-throttle-radius", FAR_PLAYER_RADIUS);
 +        defaults.set("global.swarm-radius", SWARM_RADIUS);
 +        defaults.set("global.swarm-size-threshold", SWARM_SIZE_THRESHOLD);
 +
@@ -274,30 +274,92 @@
 +
 +    private static void writeMobDefaults(final YamlConfiguration config, final String path, final MobSettings settings) {
 +        config.set(path + ".enabled", settings.enabled());
-+        config.set(path + ".far-mob-ai-throttle.enabled", settings.farMobAiThrottleEnabled());
-+        config.set(path + ".far-mob-ai-throttle.tick-rate", settings.farMobAiThrottleTickRate());
-+        config.set(path + ".zombie-path-recalculation.enabled", settings.zombiePathRecalculationEnabled());
-+        config.set(path + ".zombie-path-recalculation.extra-cooldown", settings.zombiePathRecalculationExtraCooldown());
-+        config.set(path + ".skeleton-target-check.enabled", settings.skeletonTargetCheckEnabled());
-+        config.set(path + ".skeleton-target-check.interval", settings.skeletonTargetCheckInterval());
-+        config.set(path + ".villager-brain.enabled", settings.villagerBrainThrottleEnabled());
-+        config.set(path + ".villager-brain.tick-rate", settings.villagerBrainTickRate());
-+        config.set(path + ".collision-push.disable-when-throttled", settings.disableCollisionPushWhenThrottled());
++        config.set(path + ".ai-throttle-enabled", settings.farMobAiThrottleEnabled());
++        config.set(path + ".ai-tick-rate", settings.farMobAiThrottleTickRate());
++        config.set(path + ".zombie-path-extra-cooldown", settings.zombiePathRecalculationExtraCooldown());
++        config.set(path + ".skeleton-target-check-interval", settings.skeletonTargetCheckInterval());
++        config.set(path + ".villager-brain-tick-rate", settings.villagerBrainTickRate());
++        config.set(path + ".disable-collision-push-when-throttled", settings.disableCollisionPushWhenThrottled());
 +    }
 +
 +    private static MobSettings readMobSettings(final YamlConfiguration config, final String path, final MobSettings defaults) {
++        int aiTickRate = readInt(config, defaults.farMobAiThrottleTickRate(), path + ".ai-tick-rate", path + ".far-mob-ai-throttle.tick-rate");
++        boolean aiEnabled = readBoolean(config, defaults.farMobAiThrottleEnabled(), path + ".ai-throttle-enabled", path + ".far-mob-ai-throttle.enabled");
++
++        int zombieExtraCooldown = readInt(config, defaults.zombiePathRecalculationExtraCooldown(), path + ".zombie-path-extra-cooldown", path + ".zombie-path-recalculation.extra-cooldown");
++        boolean zombieEnabled = readBoolean(config, defaults.zombiePathRecalculationEnabled(), path + ".zombie-path-extra-cooldown-enabled", path + ".zombie-path-recalculation.enabled");
++        if (!containsAny(config, path + ".zombie-path-extra-cooldown-enabled", path + ".zombie-path-recalculation.enabled")
++            && containsAny(config, path + ".zombie-path-extra-cooldown", path + ".zombie-path-recalculation.extra-cooldown")) {
++            zombieEnabled = zombieExtraCooldown > 0;
++        }
++
++        int skeletonCheckInterval = readInt(config, defaults.skeletonTargetCheckInterval(), path + ".skeleton-target-check-interval", path + ".skeleton-target-check.interval");
++        boolean skeletonEnabled = readBoolean(config, defaults.skeletonTargetCheckEnabled(), path + ".skeleton-target-check-enabled", path + ".skeleton-target-check.enabled");
++        if (!containsAny(config, path + ".skeleton-target-check-enabled", path + ".skeleton-target-check.enabled")
++            && containsAny(config, path + ".skeleton-target-check-interval", path + ".skeleton-target-check.interval")) {
++            skeletonEnabled = skeletonCheckInterval > 0;
++        }
++
++        int villagerBrainTickRate = readInt(config, defaults.villagerBrainTickRate(), path + ".villager-brain-tick-rate", path + ".villager-brain.tick-rate");
++        boolean villagerBrainEnabled = readBoolean(config, defaults.villagerBrainThrottleEnabled(), path + ".villager-brain-enabled", path + ".villager-brain.enabled");
++        if (!containsAny(config, path + ".villager-brain-enabled", path + ".villager-brain.enabled")
++            && containsAny(config, path + ".villager-brain-tick-rate", path + ".villager-brain.tick-rate")) {
++            villagerBrainEnabled = villagerBrainTickRate > 0;
++        }
++
 +        return new MobSettings(
-+            config.getBoolean(path + ".enabled", defaults.enabled()),
-+            config.getBoolean(path + ".far-mob-ai-throttle.enabled", defaults.farMobAiThrottleEnabled()),
-+            config.getInt(path + ".far-mob-ai-throttle.tick-rate", defaults.farMobAiThrottleTickRate()),
-+            config.getBoolean(path + ".zombie-path-recalculation.enabled", defaults.zombiePathRecalculationEnabled()),
-+            config.getInt(path + ".zombie-path-recalculation.extra-cooldown", defaults.zombiePathRecalculationExtraCooldown()),
-+            config.getBoolean(path + ".skeleton-target-check.enabled", defaults.skeletonTargetCheckEnabled()),
-+            config.getInt(path + ".skeleton-target-check.interval", defaults.skeletonTargetCheckInterval()),
-+            config.getBoolean(path + ".villager-brain.enabled", defaults.villagerBrainThrottleEnabled()),
-+            config.getInt(path + ".villager-brain.tick-rate", defaults.villagerBrainTickRate()),
-+            config.getBoolean(path + ".collision-push.disable-when-throttled", defaults.disableCollisionPushWhenThrottled())
++            readBoolean(config, defaults.enabled(), path + ".enabled"),
++            aiEnabled,
++            aiTickRate,
++            zombieEnabled,
++            zombieExtraCooldown,
++            skeletonEnabled,
++            skeletonCheckInterval,
++            villagerBrainEnabled,
++            villagerBrainTickRate,
++            readBoolean(
++                config,
++                defaults.disableCollisionPushWhenThrottled(),
++                path + ".disable-collision-push-when-throttled",
++                path + ".collision-push.disable-when-throttled"
++            )
 +        );
++    }
++
++    private static boolean containsAny(final YamlConfiguration config, final String... paths) {
++        for (final String path : paths) {
++            if (config.contains(path)) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    private static boolean readBoolean(final YamlConfiguration config, final boolean defaultValue, final String... paths) {
++        for (final String path : paths) {
++            if (config.contains(path)) {
++                return config.getBoolean(path, defaultValue);
++            }
++        }
++        return defaultValue;
++    }
++
++    private static int readInt(final YamlConfiguration config, final int defaultValue, final String... paths) {
++        for (final String path : paths) {
++            if (config.contains(path)) {
++                return config.getInt(path, defaultValue);
++            }
++        }
++        return defaultValue;
++    }
++
++    private static double readDouble(final YamlConfiguration config, final double defaultValue, final String... paths) {
++        for (final String path : paths) {
++            if (config.contains(path)) {
++                return config.getDouble(path, defaultValue);
++            }
++        }
++        return defaultValue;
 +    }
 +
 +    private record MobSettings(
@@ -343,12 +405,12 @@
 +
 +        static ConfigState from(final YamlConfiguration config) {
 +            return new ConfigState(
-+                config.getBoolean("global.enabled", true),
-+                Math.max(20, config.getInt("global.reload-check-interval-ticks", RELOAD_CHECK_INTERVAL_TICKS)),
-+                Math.max(0.0, config.getDouble("global.near-player-radius", NEAR_PLAYER_RADIUS)),
-+                Math.max(0.0, config.getDouble("global.far-player-radius", FAR_PLAYER_RADIUS)),
-+                Math.max(0.0, config.getDouble("global.swarm-radius", SWARM_RADIUS)),
-+                Math.max(0, config.getInt("global.swarm-size-threshold", SWARM_SIZE_THRESHOLD)),
++                readBoolean(config, true, "global.enabled"),
++                Math.max(20, readInt(config, RELOAD_CHECK_INTERVAL_TICKS, "global.reload-check-interval-ticks")),
++                Math.max(0.0, readDouble(config, NEAR_PLAYER_RADIUS, "global.near-player-radius")),
++                Math.max(0.0, readDouble(config, FAR_PLAYER_RADIUS, "global.always-throttle-radius", "global.far-player-radius")),
++                Math.max(0.0, readDouble(config, SWARM_RADIUS, "global.swarm-radius")),
++                Math.max(0, readInt(config, SWARM_SIZE_THRESHOLD, "global.swarm-size-threshold")),
 +                readMobSettings(config, "mobs.zombie", ZOMBIE_DEFAULT_SETTINGS),
 +                readMobSettings(config, "mobs.skeleton", SKELETON_DEFAULT_SETTINGS),
 +                readMobSettings(config, "mobs.creeper", CREEPER_DEFAULT_SETTINGS),
