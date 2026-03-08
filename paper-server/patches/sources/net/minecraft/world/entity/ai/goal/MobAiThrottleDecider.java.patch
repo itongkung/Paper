@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,63 @@
+@@ -1,0 +_,98 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import net.minecraft.world.entity.Mob;
@@ -13,6 +13,12 @@
 +    private static final int THROTTLED_SELECTOR_INTERVAL = 4;
 +    private static final int ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN = 6;
 +    private static final int SKELETON_TARGET_CHECK_INTERVAL = 20;
++    private static final String FAR_MOB_AI_THROTTLE_ENABLED_KEY = "far_mob_ai_throttle_enabled";
++    private static final String FAR_MOB_AI_THROTTLE_TICK_RATE_KEY = "far_mob_ai_throttle_tick_rate";
++    private static final String ZOMBIE_PATH_RECALCULATION_ENABLED_KEY = "zombie_path_recalculation_enabled";
++    private static final String ZOMBIE_PATH_RECALCULATION_COOLDOWN_KEY = "zombie_path_recalculation_extra_cooldown";
++    private static final String SKELETON_TARGET_CHECK_ENABLED_KEY = "skeleton_target_check_enabled";
++    private static final String SKELETON_TARGET_CHECK_INTERVAL_KEY = "skeleton_target_check_interval";
 +    private static final double NEAR_PLAYER_RADIUS = 24.0;
 +    private static final double FAR_PLAYER_RADIUS = 48.0;
 +    private static final double SWARM_RADIUS = 12.0;
@@ -22,15 +28,34 @@
 +    }
 +
 +    public static int goalSelectorInterval(final Mob mob) {
-+        return shouldThrottleFarMobAi(mob) ? THROTTLED_SELECTOR_INTERVAL : VANILLA_SELECTOR_INTERVAL;
++        if (!shouldThrottleFarMobAi(mob)) {
++            return VANILLA_SELECTOR_INTERVAL;
++        }
++        if (!isFeatureEnabled(mob, FAR_MOB_AI_THROTTLE_ENABLED_KEY, true)) {
++            return VANILLA_SELECTOR_INTERVAL;
++        }
++        int configuredInterval = getFeatureValue(mob, FAR_MOB_AI_THROTTLE_TICK_RATE_KEY, THROTTLED_SELECTOR_INTERVAL);
++        return configuredInterval > VANILLA_SELECTOR_INTERVAL ? configuredInterval : VANILLA_SELECTOR_INTERVAL;
 +    }
 +
 +    public static int zombiePathRecalculationExtraCooldown(final Mob mob) {
-+        return shouldThrottleZombiePathRecalculation(mob) ? ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN : 0;
++        if (!shouldThrottleZombiePathRecalculation(mob)) {
++            return 0;
++        }
++        if (!isFeatureEnabled(mob, ZOMBIE_PATH_RECALCULATION_ENABLED_KEY, true)) {
++            return 0;
++        }
++        return Math.max(0, getFeatureValue(mob, ZOMBIE_PATH_RECALCULATION_COOLDOWN_KEY, ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN));
 +    }
 +
 +    public static int skeletonTargetCheckInterval(final Mob mob) {
-+        return shouldThrottleSkeletonTargetChecks(mob) ? SKELETON_TARGET_CHECK_INTERVAL : 0;
++        if (!shouldThrottleSkeletonTargetChecks(mob)) {
++            return 0;
++        }
++        if (!isFeatureEnabled(mob, SKELETON_TARGET_CHECK_ENABLED_KEY, true)) {
++            return 0;
++        }
++        return Math.max(0, getFeatureValue(mob, SKELETON_TARGET_CHECK_INTERVAL_KEY, SKELETON_TARGET_CHECK_INTERVAL));
 +    }
 +
 +    public static boolean shouldThrottleFarMobAi(final Mob mob) {
@@ -62,5 +87,15 @@
 +        return mob.level()
 +                .getEntitiesOfClass(Mob.class, mob.getBoundingBox().inflate(SWARM_RADIUS), nearby -> nearby != mob && nearby.getType() == mob.getType())
 +                .size() >= SWARM_SIZE_THRESHOLD;
++    }
++
++    private static boolean isFeatureEnabled(final Mob mob, final String configKey, final boolean defaultValue) {
++        Integer configured = mob.level().paperConfig().tickRates.behavior.get(mob.getType(), configKey);
++        return configured != null ? configured.intValue() > 0 : defaultValue;
++    }
++
++    private static int getFeatureValue(final Mob mob, final String configKey, final int defaultValue) {
++        Integer configured = mob.level().paperConfig().tickRates.behavior.get(mob.getType(), configKey);
++        return configured != null ? configured.intValue() : defaultValue;
 +    }
 +}
