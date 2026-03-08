@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/net/minecraft/world/entity/ai/goal/MobAiThrottleDecider.java
-@@ -1,0 +_,54 @@
+@@ -1,0 +_,63 @@
 +package net.minecraft.world.entity.ai.goal;
 +
 +import net.minecraft.world.entity.Mob;
@@ -12,6 +12,7 @@
 +    private static final int VANILLA_SELECTOR_INTERVAL = 2;
 +    private static final int THROTTLED_SELECTOR_INTERVAL = 4;
 +    private static final int ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN = 6;
++    private static final int SKELETON_TARGET_CHECK_INTERVAL = 20;
 +    private static final double NEAR_PLAYER_RADIUS = 24.0;
 +    private static final double FAR_PLAYER_RADIUS = 48.0;
 +    private static final double SWARM_RADIUS = 12.0;
@@ -26,6 +27,10 @@
 +
 +    public static int zombiePathRecalculationExtraCooldown(final Mob mob) {
 +        return shouldThrottleZombiePathRecalculation(mob) ? ZOMBIE_PATH_RECALCULATION_EXTRA_COOLDOWN : 0;
++    }
++
++    public static int skeletonTargetCheckInterval(final Mob mob) {
++        return shouldThrottleSkeletonTargetChecks(mob) ? SKELETON_TARGET_CHECK_INTERVAL : 0;
 +    }
 +
 +    public static boolean shouldThrottleFarMobAi(final Mob mob) {
@@ -47,6 +52,10 @@
 +
 +    private static boolean shouldThrottleZombiePathRecalculation(final Mob mob) {
 +        return mob instanceof Zombie && shouldThrottleFarMobAi(mob);
++    }
++
++    private static boolean shouldThrottleSkeletonTargetChecks(final Mob mob) {
++        return mob instanceof AbstractSkeleton && shouldThrottleFarMobAi(mob);
 +    }
 +
 +    private static boolean isInSwarm(final Mob mob) {

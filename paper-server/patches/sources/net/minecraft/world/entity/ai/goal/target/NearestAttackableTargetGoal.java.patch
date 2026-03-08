@@ -1,5 +1,23 @@
 --- a/net/minecraft/world/entity/ai/goal/target/NearestAttackableTargetGoal.java
 +++ b/net/minecraft/world/entity/ai/goal/target/NearestAttackableTargetGoal.java
+@@ -6,6 +_,7 @@
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.entity.ai.goal.Goal;
++import net.minecraft.world.entity.ai.goal.MobAiThrottleDecider;
+ import net.minecraft.world.entity.ai.targeting.TargetingConditions;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.phys.AABB;
+@@ -42,7 +_,8 @@
+ 
+     @Override
+     public boolean canUse() {
+-        if (this.randomInterval > 0 && this.mob.getRandom().nextInt(this.randomInterval) != 0) {
++        int targetCheckInterval = Math.max(this.randomInterval, MobAiThrottleDecider.skeletonTargetCheckInterval(this.mob));
++        if (targetCheckInterval > 0 && this.mob.getRandom().nextInt(targetCheckInterval) != 0) {
+             return false;
+         } else {
+             this.findTarget();
 @@ -72,7 +_,7 @@
  
      @Override
